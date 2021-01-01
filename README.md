@@ -28,4 +28,4 @@ dts duckiebot keyboard_control [ROBOT_NAME]
 dts start_gui_tools jcdgo
 rviz
 ```
-Add TF and compressedImage inside of RVIZ, then set at_baselink as the fixed frame 
+Add TF and compressedImage inside of RVIZ, then set at_baselink as the fixed frame. 

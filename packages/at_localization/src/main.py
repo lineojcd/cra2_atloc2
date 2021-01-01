@@ -89,12 +89,7 @@ class AtLocNode(DTROS):
         self._baseline = rospy.get_param(f'/{self.veh_name}/kinematics_node/baseline')
         
         # load ground homography
-        self.calibration_file_extrin = (
-                "/code/catkin_ws/src/cra2_atloc2/calibrations/camera_extrinsic/" + self.veh_name + ".yaml")
-        self.calibration_file_intrin = (
-                "/code/catkin_ws/src/cra2_atloc2/calibrations/camera_intrinsic/" + self.veh_name + ".yaml")
-
-        self.groun_homography = self.load_extrinsics(self.calibration_file_extrin)
+        self.groun_homography = self.load_extrinsics()
         self.homography_g2p = np.linalg.inv(np.array(self.groun_homography).reshape((3,3)))
 
         self.at_camera_params = None
@@ -151,8 +146,7 @@ class AtLocNode(DTROS):
                        decode_sharpening=0.25,
                        debug=0)
 
-############################## subscribers and publishers ####################################
-
+############################## subscribers and publishers ####################################        
         self.sub_camera_info = Subscriber(
             f'/{self.veh_name}/camera_node/camera_info', 
             CameraInfo,
@@ -160,6 +154,7 @@ class AtLocNode(DTROS):
             queue_size=1
         )
         self.log(f"Subcribing to topic {f'/{self.veh_name}/camera_node/camera_info'}")
+
 
         self.sub_compressed_image = rospy.Subscriber(
             f'/{self.veh_name}/camera_node/image/compressed',
@@ -169,44 +164,69 @@ class AtLocNode(DTROS):
         )
         self.log(f"listening to {f'/{self.veh_name}/camera_node/image/compressed'}")
 
-        self.log("Class AtLocNode initialized")
+        # Publishers
 
-    def load_extrinsics(self, f_path):
+        # self.pub_baselink = rospy.Publisher(
+        #     "~TF/encoder_baselink",
+        #     Float32,
+        #     queue_size=1
+        # )
+        # self.log(f"Publishing data to {f'/{self.veh_name}/{self.node_name}/TF/encoder_baselink'}")
+
+        # self.pub_integrated_distance_left = rospy.Publisher(
+        #     "~left_wheel_distance",
+        #     Float32,
+        #     queue_size=1
+        # )
+        # self.log(f"Publishing data to {f'/{self.veh_name}/{self.node_name}/left_wheel_distance'}")
+
+        # self.pub_integrated_distance_right = rospy.Publisher(
+        #     "~right_wheel_distance",
+        #     Float32,
+        #     queue_size=1
+        # )
+        # self.log(f"Publishing data to {f'/{self.veh_name}/{self.node_name}/left_wheel_distance'}")
+
+        self.log("Class AtLocNode initialized")
+    
+    
+    def load_extrinsics(self):
         """
         Loads the homography matrix from the extrinsic calibration file.
         Returns:
             :obj:`numpy array`: the loaded homography matrix
         """
-
         # load intrinsic calibration
-        # cali_file_folder = '/data/config/calibrations/camera_extrinsic/'
-        # cali_file = cali_file_folder + rospy.get_namespace().strip("/") + ".yaml"
+        cali_file_folder = '/code/catkin_ws/src/cra2_atloc2/calibrations/camera_extrinsic/'
+        cali_file = cali_file_folder + rospy.get_namespace().strip("/") + ".yaml"
 
         # Locate calibration yaml file or use the default otherwise
-        if not os.path.isfile(f_path):
+        if not os.path.isfile(cali_file):
             self.log("Can't find calibration file: %s.\n Using default calibration instead."
-                     % f_path, 'warn')
-            cali_file = (f_path + "default.yaml")
+                     % cali_file, 'warn')
+            cali_file = (cali_file_folder + "default.yaml")
 
         # Shutdown if no calibration file not found
-        if not os.path.isfile(f_path):
+        if not os.path.isfile(cali_file):
             msg = 'Found no calibration file ... aborting'
             self.log(msg, 'err')
             rospy.signal_shutdown(msg)
 
         try:
-            with open(f_path, 'r') as stream:
+            with open(cali_file,'r') as stream:
                 calib_data = yaml.load(stream)
         except yaml.YAMLError:
             msg = 'Error in parsing calibration file %s ... aborting' % cali_file
             self.log(msg, 'err')
             rospy.signal_shutdown(msg)
-        return np.array(calib_data['homography']).reshape((3, 3))
+
+        return calib_data['homography']
 
     # broadcast a transform matrix as tf type 
     def broadcast_tf(self, tf_mat, time, # rospy.Time()
         child="encoder_baselink",
         parent="map"):
+
 
         def _matrix_to_quaternion(r):
             T = np.array((
@@ -225,6 +245,7 @@ class AtLocNode(DTROS):
         return 
 
     def detect(self, img):
+
         greyscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         tags = self.at_detector.detect(greyscale_img, True,
                             self.at_camera_params, self.at_tag_size)
@@ -245,7 +266,6 @@ class AtLocNode(DTROS):
             self.tf_cameraFapriltag = tf_cameraFapriltag
             self.tf_apriltagFcamera = np.linalg.inv(self.tf_cameraFapriltag)
             self.tf_apriltagFbaselink = self.tf_apriltagFcamera @ self.tf_cameraFbaselink
-
             # to meet the output requirement 
             self.tf_apriltagFbaselink = self.tf_apriltag_convention_rotation @ self.tf_apriltagFbaselink
             
@@ -259,9 +279,10 @@ class AtLocNode(DTROS):
             
             count += 1
             break
+        return count 
 
-        return count
 
+    
     def cb_camera_info(self, msg):
         # self.logdebug("camera info received! ")
         if not self.camera_info_received:
@@ -276,6 +297,7 @@ class AtLocNode(DTROS):
 
             self.log(f"tf_cameraFbaselink is {self.tf_cameraFbaselink}")
             self.camera_info_received = True
+
         return
 
     def cb_compressed_image(self, msg):
@@ -289,7 +311,7 @@ class AtLocNode(DTROS):
         rect_img = self.rectifier.rectify(cv2_img)
         
         # detect tags
-        self.detect(rect_img)
+        self.detect(rect_img)        
         return
 
     # baselink as root frame 
@@ -299,42 +321,39 @@ class AtLocNode(DTROS):
             ######### publish apriltag detection TF 
             if self.camera_info_received:
                 
-                self.broadcast_tf(np.linalg.inv(self.tf_output_cameraFbaselink),  # camera to baselink
-                                  rospy.Time.now(),
-                                  "camera",
-                                  "encoder_baselink")
-
-                # self.broadcast_tf(self.tf_cameraFbaselink, # camera to baselink
-                #     rospy.Time.now(),
-                #     "at_baselink",
-                #     "camera")
+                self.broadcast_tf(np.linalg.inv(self.tf_output_cameraFbaselink), # camera to baselink
+                    rospy.Time.now(),
+                    "camera",
+                    "at_baselink")
     
             if self.first_loc:
             
+
                 self.broadcast_tf(np.linalg.inv(self.tf_mapFbaselink),
                     rospy.Time.now(),
                     "map",
-                    "encoder_baselink")
+                    "at_baselink")
                 self.broadcast_tf(np.linalg.inv(self.tf_apriltagFbaselink),
                     rospy.Time.now(),
                     "apriltag",
-                    "encoder_baselink")
+                    "at_baselink")
+                # DEBUG
 
-                # self.broadcast_tf(np.linalg.inv(self.tf_cameraFapriltag),
-                #                   rospy.Time.now(),
-                #                   "camera",
-                #                   "apriltag")
-
-                # self.broadcast_tf(self.tf_mapFapriltag,
-                #                   rospy.Time.now(),
-                #                   "apriltag",
-                #                   "map")
-
+                ######## publish wheel odometry TF ################
+                # self.odm.run_update_pose()
+                # pose_baselink_in_map = self.odm.get_baselink_matrix()
+                # self.broadcast_tf(
+                #     pose_baselink_in_map,
+                #     rospy.Time.now(),
+                #     "encoder_baselink",
+                #     "map"
+                # )
             rate.sleep()
+
 
 if __name__ == '__main__':
     node = AtLocNode(node_name='at_localization')
-    # Keep it spinning to keep the node alive
+    # Keep it spinning to keep the node alive 
     node.run()
     rospy.spin()
 
